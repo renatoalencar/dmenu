@@ -27,6 +27,8 @@
 /* enums */
 enum { SchemeNorm, SchemeSel, SchemeOut, SchemeLast }; /* color schemes */
 
+enum position { Top, Bottom, Middle };
+
 struct item {
 	char *text;
 	struct item *left, *right;
@@ -52,6 +54,10 @@ static XIC xic;
 static Drw *drw;
 static Clr *scheme[SchemeLast];
 
+static enum position bar_position = Top;
+
+static int width = 100;
+
 #include "config.h"
 
 static int (*fstrncmp)(const char *, const char *, size_t) = strncmp;
@@ -67,10 +73,11 @@ textw_clamp(const char *str, unsigned int n)
 static void
 appenditem(struct item *item, struct item **list, struct item **last)
 {
-	if (*last)
+	if (*last) {
 		(*last)->right = item;
-	else
+	} else {
 		*list = item;
+	}
 
 	item->left = *last;
 	item->right = NULL;
@@ -633,7 +640,7 @@ setup(void)
 	utf8 = XInternAtom(dpy, "UTF8_STRING", False);
 
 	/* calculate menu geometry */
-	bh = drw->fonts->h + 2;
+	bh = drw->fonts->h + 10;
 	lines = MAX(lines, 0);
 	mh = (lines + 1) * bh;
 #ifdef XINERAMA
@@ -662,9 +669,17 @@ setup(void)
 				if (INTERSECT(x, y, 1, 1, info[i]) != 0)
 					break;
 
-		x = info[i].x_org;
-		y = info[i].y_org + (topbar ? 0 : info[i].height - mh);
-		mw = info[i].width;
+		if (bar_position == Top) {
+			y = info[i].y_org;
+		} else if (bar_position == Middle) {
+			y = info[i].y_org + (info[i].height / 2 - bh);	
+		} else if (bar_position == Bottom) {
+			y = info[i].y_org + info[i].height - mh;
+		}
+
+		mw = info[i].width * width / 100;
+		x = info[i].x_org + ((info[i].width - mw) / 2);
+
 		XFree(info);
 	} else
 #endif
@@ -719,67 +734,98 @@ usage(void)
 	    "             [-nb color] [-nf color] [-sb color] [-sf color] [-w windowid]");
 }
 
-int
-main(int argc, char *argv[])
-{
+int main(int argc, char **argv) {
 	XWindowAttributes wa;
-	int i, fast = 0;
+	int fast = 0;
+	char c;
 
-	for (i = 1; i < argc; i++)
-		/* these options take no arguments */
-		if (!strcmp(argv[i], "-v")) {      /* prints version information */
-			puts("dmenu-"VERSION);
-			exit(0);
-		} else if (!strcmp(argv[i], "-b")) /* appears at the bottom of the screen */
-			topbar = 0;
-		else if (!strcmp(argv[i], "-f"))   /* grabs keyboard before reading stdin */
-			fast = 1;
-		else if (!strcmp(argv[i], "-i")) { /* case-insensitive item matching */
-			fstrncmp = strncasecmp;
-			fstrstr = cistrstr;
-		} else if (i + 1 == argc)
-			usage();
-		/* these options take one argument */
-		else if (!strcmp(argv[i], "-l"))   /* number of lines in vertical list */
-			lines = atoi(argv[++i]);
-		else if (!strcmp(argv[i], "-m"))
-			mon = atoi(argv[++i]);
-		else if (!strcmp(argv[i], "-p"))   /* adds prompt to left of input field */
-			prompt = argv[++i];
-		else if (!strcmp(argv[i], "-fn"))  /* font or font set */
-			fonts[0] = argv[++i];
-		else if (!strcmp(argv[i], "-nb"))  /* normal background color */
-			colors[SchemeNorm][ColBg] = argv[++i];
-		else if (!strcmp(argv[i], "-nf"))  /* normal foreground color */
-			colors[SchemeNorm][ColFg] = argv[++i];
-		else if (!strcmp(argv[i], "-sb"))  /* selected background color */
-			colors[SchemeSel][ColBg] = argv[++i];
-		else if (!strcmp(argv[i], "-sf"))  /* selected foreground color */
-			colors[SchemeSel][ColFg] = argv[++i];
-		else if (!strcmp(argv[i], "-w"))   /* embedding window id */
-			embed = argv[++i];
-		else
-			usage();
+	while ((c = getopt(argc, argv, "sbfivl:p:m:w:F:W:")) != -1) {
+		switch (c) {
+			case 'v':
+				puts("dmenu-"VERSION);
+				exit(0);
+			case 'b':
+				bar_position = Bottom;
+				break;
+			case 's':
+				bar_position = Middle;
+				break;
+			case 't':
+				bar_position = Top;
+				break;
+			case 'f':
+				fast = 1;
+				break;
+			case 'i':
+				fstrncmp = strncasecmp;
+				fstrstr = cistrstr;
+				break;
+			case 'l':
+				lines = atoi(optarg);
+				break;
+			case 'm':
+				mon = atoi(optarg);
+				break;
+			case 'p':
+				prompt = optarg;
+				break;
+			case 'w':
+				embed = optarg;
+				break;
+			case 'F':
+				fonts[0] = optarg;
+				break;
+			case 'B':
+				colors[SchemeNorm][ColBg] = optarg;
+				break;
+			case 'c':
+				colors[SchemeNorm][ColFg] = optarg;
+				break;
+			case 'k':
+				colors[SchemeSel][ColBg] = optarg;
+				break;
+			case 'n':
+				colors[SchemeSel][ColFg] = optarg;
+				break;
+			case 'W':
+				width = atoi(optarg);
+				break;
+			default:
+				usage();
+		}
+	}
 
-	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale())
+	if (!setlocale(LC_CTYPE, "") || !XSupportsLocale()) {
 		fputs("warning: no locale support\n", stderr);
-	if (!(dpy = XOpenDisplay(NULL)))
+	}
+		
+	if (!(dpy = XOpenDisplay(NULL))) {
 		die("cannot open display");
+	}
+
 	screen = DefaultScreen(dpy);
 	root = RootWindow(dpy, screen);
-	if (!embed || !(parentwin = strtol(embed, NULL, 0)))
+
+	if (!embed || !(parentwin = strtol(embed, NULL, 0))) {
 		parentwin = root;
-	if (!XGetWindowAttributes(dpy, parentwin, &wa))
+	}
+
+	if (!XGetWindowAttributes(dpy, parentwin, &wa)) {
 		die("could not get embedding window attributes: 0x%lx",
 		    parentwin);
+	}
+
 	drw = drw_create(dpy, screen, root, wa.width, wa.height);
-	if (!drw_fontset_create(drw, fonts, LENGTH(fonts)))
+	if (!drw_fontset_create(drw, fonts, LENGTH(fonts))) {
 		die("no fonts could be loaded.");
+	}
+
 	lrpad = drw->fonts->h;
 
 #ifdef __OpenBSD__
-	if (pledge("stdio rpath", NULL) == -1)
+	if (pledge("stdio rpath", NULL) == -1) {
 		die("pledge");
+	}
 #endif
 
 	if (fast && !isatty(0)) {
@@ -789,6 +835,7 @@ main(int argc, char *argv[])
 		readstdin();
 		grabkeyboard();
 	}
+
 	setup();
 	run();
 

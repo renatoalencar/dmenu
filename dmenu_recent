@@ -1,0 +1,5 @@
+#!/bin/sh
+
+read command
+echo $command >> ~/.dmenu_recent
+echo $command

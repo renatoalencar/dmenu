@@ -1,5 +1,21 @@
-#!/bin/sh
+#!/usr/bin/env python
 
-read command
-echo $command >> ~/.dmenu_recent
-echo $command
+import sys
+import os
+
+dmenu_recent_path = os.path.join(os.environ['HOME'], '.dmenu_recent')
+
+if sys.argv[1] == '-s':
+    cmd = sys.stdin.readline()
+    with open(dmenu_recent_path, 'a+') as f:
+        f.write(cmd)
+    sys.stdout.write(cmd)
+elif sys.argv[1] == '-r':
+    lines = open(dmenu_recent_path).readlines()[::-1]
+    commands = set()
+
+    for cmd in lines:
+        if cmd not in commands and cmd != '\n':
+            sys.stdout.write(cmd)
+            commands.add(cmd)
+
